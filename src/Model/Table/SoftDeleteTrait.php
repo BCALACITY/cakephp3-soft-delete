@@ -6,6 +6,15 @@ use Cake\Datasource\EntityInterface;
 use SoftDelete\Error\MissingColumnException;
 use SoftDelete\ORM\Query;
 
+/**
+ * Customizing plugin to read session information
+ */
+use Cake\Network\Session;
+/**
+ * Customizing plugin to read table schema
+ */
+use Cake\Datasource\ConnectionManager;
+use Cake\Database\Schema\TableSchema;
 trait SoftDeleteTrait {
 
     /**
@@ -22,7 +31,7 @@ trait SoftDeleteTrait {
             $field = 'deleted';
         }
 
-        if ($this->schema()->column($field) === null) {
+        if ($this->getSchema()->getColumn($field) === null) {
             throw new MissingColumnException(
                 __('Configured field `{0}` is missing from the table `{1}`.',
                     $field,
@@ -36,7 +45,7 @@ trait SoftDeleteTrait {
 
     public function query()
     {
-        return new Query($this->connection(), $this);
+        return new Query($this->getConnection(), $this);
     }
 
     /**
@@ -81,10 +90,26 @@ trait SoftDeleteTrait {
             ['_primary' => false] + $options->getArrayCopy()
         );
 
+        /**
+         * REA Adding code to get the user logged in to record deletion. 
+         */
+        $this->session = new Session();
+        $deleted_by = $this->session->read('Auth.User.name');
         $query = $this->query();
+        $tableName = $query->repository()->table();
+        $connection = ConnectionManager::get('default');
+        $collection = $connection->getSchemaCollection();
+        $tableSchema = $collection->describe($tableName);
+        $delFlagColumn = $tableSchema->column('DEL_FLAG');
+        if (isset($delFlagColumn)) {
+            $setValues = [$this->getSoftDeleteField() => date('Y-m-d H:i:s'), 'deleted_by' => $deleted_by, 'DEL_FLAG' => 'D'];
+        }
+        else {
+            $setValues = [$this->getSoftDeleteField() => date('Y-m-d H:i:s'), 'deleted_by' => $deleted_by];    
+        }
         $conditions = (array)$entity->extract($primaryKey);
         $statement = $query->update()
-            ->set([$this->getSoftDeleteField() => date('Y-m-d H:i:s')])
+            ->set($setValues)            
             ->where($conditions)
             ->execute();
 
@@ -107,9 +132,11 @@ trait SoftDeleteTrait {
      */
     public function deleteAll($conditions)
     {
+        $this->session = new Session();
+        $deleted_by = $this->session->read('Auth.User.name');
         $query = $this->query()
             ->update()
-            ->set([$this->getSoftDeleteField() => date('Y-m-d H:i:s')])
+            ->set([$this->getSoftDeleteField() => date('Y-m-d H:i:s'), 'deleted_by' => $deleted_by])
             ->where($conditions);
         $statement = $query->execute();
         $statement->closeCursor();

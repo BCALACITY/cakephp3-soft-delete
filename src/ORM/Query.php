@@ -22,12 +22,12 @@ class Query extends CakeQuery
         if (!$this->_beforeFindFired && $this->_type === 'select') {
             parent::triggerBeforeFind();
 
-            $repository = $this->repository();
+            $repository = $this->getRepository();
             $options = $this->getOptions();
 
             if (!is_array($options) || !in_array('withDeleted', $options)) {
                 $aliasedField = $repository->aliasField($repository->getSoftDeleteField());
-                $this->andWhere($aliasedField . ' IS NULL');
+                $this->andWhere($aliasedField . ' = 0');
             }
         }
     }
